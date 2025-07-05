@@ -29,7 +29,7 @@ A Zotero 7 plugin that minimizes Zotero to the system tray instead of closing it
 4. Click `Install`
 
 ### Manual Installation
-1. Download the latest `.xpi` file from [Releases](https://github.com/yourname/minimize-zotero-to-tray/releases)
+1. Download the latest `.xpi` file from [Releases](https://github.com/B3000Kcn/minimize-zotero-to-tray/releases)
 2. Open Zotero 7
 3. Go to `Tools` → `Add-ons`
 4. Click the gear icon → `Install Add-on From File`
