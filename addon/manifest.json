@@ -1,0 +1,16 @@
+{
+    "manifest_version": 2,
+    "name": "Minimize Zotero To Tray",
+    "version": "1.0.0",
+    "description": "Minimize Zotero to system tray - keep your reference manager running quietly in the background.",
+    "author": "[Your Name]",
+    "homepage_url": "https://github.com/B3000Kcn/minimize-zotero-to-tray",
+    "applications": {
+        "zotero": {
+            "id": "minimize-zotero-to-tray@B3000Kcn.github.io",
+            "strict_min_version": "6.999",
+            "strict_max_version": "*",
+            "update_url": "https://github.com/B3000Kcn/minimize-zotero-to-tray/releases/latest/download/update.json"
+        }
+    }
+} 
