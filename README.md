@@ -42,6 +42,7 @@ Once installed, the plugin works automatically:
 1. **Minimize to Tray**: Close Zotero using any method (X button, Alt+F4, taskbar, etc.) - it will minimize to system tray instead of closing
 2. **Restore from Tray**: Double-click the tray icon to restore Zotero window
 3. **Silent Operation**: No popup notifications - clean and unobtrusive
+4. **Completely Quit**: To fully exit Zotero and its tray helper, use the `File` > `Quit` option from the Zotero menu.
 
 ## 🔧 Technical Details & Architecture
 
