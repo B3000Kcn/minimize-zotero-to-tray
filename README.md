@@ -17,7 +17,7 @@ A Zotero 7 plugin that minimizes Zotero to the system tray instead of closing it
   - Already visible and foreground → No action
   - Not visible (other reasons) → Make visible
 - **🔇 Silent Operation**: No annoying popup notifications
-- **💾 State Preservation**: Maintains window maximize state when restoring
+- **💾 State Preservation**: Remembers if the window was maximized and restores it to the correct state.
 - **🛡️ Memory Safe**: Proper resource management and cleanup
 
 ## 📦 Installation
@@ -63,10 +63,6 @@ If Zotero crashes or is terminated abnormally (e.g., via Task Manager), the main
 **In this specific scenario, `tray_helper.exe` will become an orphan process.** 
 
 It consumes minimal resources, but you may want to close it manually using the Windows Task Manager. The process will be automatically replaced the next time you start Zotero. Normal Zotero shutdown procedures will clean up the process correctly.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit issues and pull requests.
 
 ## 📄 License
 
