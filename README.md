@@ -43,12 +43,26 @@ Once installed, the plugin works automatically:
 2. **Restore from Tray**: Double-click the tray icon to restore Zotero window
 3. **Silent Operation**: No popup notifications - clean and unobtrusive
 
-## 🔧 Technical Details
+## 🔧 Technical Details & Architecture
 
-- **Target Platform**: Windows (uses Windows API for tray integration)
+This plugin uses a hybrid architecture to ensure stability on modern Windows systems.
+
+- **Target Platform**: Windows
 - **Zotero Version**: 7.0+ 
-- **Architecture**: Bootstrap plugin with dual-intercept mechanism
-- **API Used**: js-ctypes for Windows system tray integration
+- **Core Logic**: The main plugin logic is a Bootstrap extension running within Zotero.
+- **Tray Icon Helper**: To avoid crashes related to `js-ctypes` on some systems, the system tray icon is managed by a small, pre-compiled external program: `tray_helper.exe`.
+
+### How It Works
+
+The `.xpi` plugin file contains the `tray_helper.exe` executable. When Zotero starts, the plugin extracts this helper program to a temporary directory and runs it. The helper's only job is to create the tray icon and listen for clicks. When you click the icon, it notifies the main Zotero plugin via a local TCP socket to show or hide the Zotero window.
+
+### ⚠️ Important Note on Zotero Crashes
+
+If Zotero crashes or is terminated abnormally (e.g., via Task Manager), the main plugin does not get a chance to shut down the `tray_helper.exe` process. 
+
+**In this specific scenario, `tray_helper.exe` will become an orphan process.** 
+
+It consumes minimal resources, but you may want to close it manually using the Windows Task Manager. The process will be automatically replaced the next time you start Zotero. Normal Zotero shutdown procedures will clean up the process correctly.
 
 ## 🤝 Contributing
 
