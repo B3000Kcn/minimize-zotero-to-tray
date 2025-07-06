@@ -10,7 +10,7 @@ A Zotero 7 plugin that minimizes Zotero to the system tray instead of closing it
 
 - **🎯 Smart Window Management**: Intercepts ALL close methods (X button, taskbar close, task view close)
 - **🔍 Intelligent State Detection**: Recognizes 5 different window states for optimal restoration
-- **🖱️ Double-Click Restore**: Smart behavior based on actual window state:
+- **🖱️ Single-Click Restore**: Smart behavior based on actual window state:
   - Hidden by plugin → Restore window
   - Minimized to taskbar → Restore window  
   - Visible but not foreground → Bring to foreground
@@ -40,7 +40,7 @@ A Zotero 7 plugin that minimizes Zotero to the system tray instead of closing it
 Once installed, the plugin works automatically:
 
 1. **Minimize to Tray**: Close Zotero using any method (X button, Alt+F4, taskbar, etc.) - it will minimize to system tray instead of closing
-2. **Restore from Tray**: Double-click the tray icon to restore Zotero window
+2. **Restore from Tray**: Single-click the tray icon to restore the Zotero window
 3. **Silent Operation**: No popup notifications - clean and unobtrusive
 4. **Completely Quit**: To fully exit Zotero and its tray helper, use the `File` > `Quit` option from the Zotero menu.
 
