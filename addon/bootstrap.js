@@ -19,7 +19,6 @@ var ZoteroInTray = {
 
     // For TCP Server
     serverSocket: null,
-    PORT: 23120,
     
     // Window Management
     mainWindow: null,
@@ -28,6 +27,8 @@ var ZoteroInTray = {
     isWindowHidden: false,
     windowWasMaximized: false,
     isActuallyQuitting: false,
+    initialHidePerformed: false,
+    hidePollingInterval: null,
     
     // Helper Process
     helperProcess: null,
@@ -35,6 +36,7 @@ var ZoteroInTray = {
     helperPath: null,
     isShuttingDown: false,
     relaunchDelay: 2000, // ms
+    prefObserver: null,
     
     // Windows API
     user32: null,
@@ -46,11 +48,13 @@ var ZoteroInTray = {
         SW_HIDE: 0,
         SW_RESTORE: 9,
         SW_MAXIMIZE: 3,
+        SW_MINIMIZE: 6,
     },
 
     // Mozilla Components
     Cc: null,
     Ci: null,
+    prefPane: null,
 
     init: function({ id, version, rootURI }) {
         this.id = id;
@@ -75,6 +79,8 @@ var ZoteroInTray = {
         
         this.initWinAPI();
         this.startServer();
+        this.registerPrefObserver();
+        this.registerPreferences();
         this.launchHelper();
         this.setupDualInterceptForExistingWindows();
         
@@ -99,6 +105,14 @@ var ZoteroInTray = {
     
     startServer: function() {
         try {
+            const port = Zotero.Prefs.get('extensions.zotero-in-tray.network.port', true);
+            this.log(`Attempting to start server on port: ${port} (Type: ${typeof port})`);
+
+            if (!port || isNaN(port)) {
+                this.log(`✗ Invalid port number: '${port}'. Aborting server start.`);
+                return;
+            }
+
             this.serverSocket = this.Cc["@mozilla.org/network/server-socket;1"]
                 .createInstance(this.Ci.nsIServerSocket);
             
@@ -108,9 +122,9 @@ var ZoteroInTray = {
                     this.handleConnection(socket, transport.openInputStream(0, 0, 0), transport.openOutputStream(0, 0, 0));
                 }
             };
-            this.serverSocket.init(this.PORT, true, -1);
+            this.serverSocket.init(Number(port), true, -1);
             this.serverSocket.asyncListen(listener);
-            this.log(`✓ Server listening on port ${this.PORT}`);
+            this.log(`✓ Server listening on port ${port}`);
         } catch(e) {
             this.log(`✗ Error starting server: ${e}`);
             if (typeof Zotero !== 'undefined') Zotero.logError(e);
@@ -131,6 +145,37 @@ var ZoteroInTray = {
             this.log("✗ Error declaring Windows API functions: " + e);
             throw e;
         }
+    },
+
+    getHotkeyArgs: function() {
+        const args = [];
+        try {
+            const useCtrl = Zotero.Prefs.get('extensions.zotero-in-tray.hotkey.ctrl', true);
+            const useAlt = Zotero.Prefs.get('extensions.zotero-in-tray.hotkey.alt', true);
+            const useShift = Zotero.Prefs.get('extensions.zotero-in-tray.hotkey.shift', true);
+            const key = Zotero.Prefs.get('extensions.zotero-in-tray.hotkey.key', true);
+            const port = Zotero.Prefs.get('extensions.zotero-in-tray.network.port', true);
+            this.log(`Read port for helper args: ${port}`);
+
+            if (useCtrl) args.push('--ctrl');
+            if (useAlt) args.push('--alt');
+            if (useShift) args.push('--shift');
+            
+            if (key && /^[a-zA-Z0-9]$/.test(key)) {
+                args.push(`--key=${key.toUpperCase()}`);
+            } else if (key) {
+                this.log(`✗ Invalid hotkey character specified: "${key}". Ignoring.`);
+            }
+
+            if (port && !isNaN(port)) {
+                 args.push(`--port=${port}`);
+            } else {
+                 this.log(`✗ Invalid or missing port for helper. Using helper's default.`);
+            }
+        } catch (e) {
+            this.log(`✗ Error reading preferences for helper: ${e}`);
+        }
+        return args;
     },
 
     launchHelper: function() {
@@ -175,8 +220,9 @@ var ZoteroInTray = {
             const process = this.Cc["@mozilla.org/process/util;1"].createInstance(this.Ci.nsIProcess);
             process.init(helperFile);
             
-            this.log(`🚀 Running helper...`);
-            process.runAsync([], 0, (subject, topic, data) => {
+            const args = this.getHotkeyArgs();
+            this.log(`🚀 Running helper with args: ${args.join(' ')}`);
+            process.runAsync(args, args.length, (subject, topic, data) => {
                 if (topic === "process-finished" || topic === "process-failed") {
                     this.log(`Helper process terminated (topic: ${topic}). Exit code: ${data}`);
                     this.helperProcess = null;
@@ -190,10 +236,63 @@ var ZoteroInTray = {
                 }
             });
             this.helperProcess = process;
+
+            try {
+                const shouldAutoHide = Zotero.Prefs.get('extensions.zotero-in-tray.startup.autohide', true);
+                if (shouldAutoHide && !this.initialHidePerformed) {
+                    this.log('🚀 Auto-hide is enabled. Starting to poll for main window...');
+                    if (this.hidePollingInterval) clearInterval(this.hidePollingInterval);
+                    
+                    this.hidePollingInterval = setInterval(() => {
+                        this.tryHideWindowOnStartup();
+                    }, 250);
+
+                    setTimeout(() => {
+                        if (this.hidePollingInterval) {
+                            clearInterval(this.hidePollingInterval);
+                            this.hidePollingInterval = null;
+                            this.log('✗ Polling for window handle timed out after 15s.');
+                        }
+                    }, 15000);
+                }
+            } catch(e) {
+                this.log(`✗ Error starting auto-hide poller: ${e}`);
+            }
+
         } catch (e) {
             this.log("✗ Error launching helper process: " + e);
             if (typeof Zotero !== 'undefined') Zotero.logError(e);
         }
+    },
+
+    registerPreferences: function() {
+        this.log("Registering preferences pane...");
+        this.prefPane = Zotero.PreferencePanes.register({
+            pluginID: this.id,
+            paneID: 'zotero-in-tray-prefs',
+            label: 'Minimize to Tray',
+            src: this.rootURI + 'preferences.xhtml',
+        });
+        this.log("✓ Preferences pane registered.");
+    },
+
+    registerPrefObserver: function() {
+        this.log("Registering preference observer...");
+        
+        this.prefObserver = (branch, name) => {
+            if (name.startsWith('extensions.zotero-in-tray.')) {
+                this.log(`Preference changed: ${name}. Restarting helper process.`);
+                if (this.helperProcess) {
+                    this.helperProcess.kill(); 
+                } else {
+                    this.log("Helper process was not running, launching it now.");
+                    this.launchHelper();
+                }
+            }
+        };
+        
+        Zotero.Prefs.registerObserver('extensions.zotero-in-tray.', this.prefObserver);
+        this.log("✓ Preference observer registered.");
     },
 
     handleConnection: function(socket, inputStream, outputStream) {
@@ -226,7 +325,7 @@ var ZoteroInTray = {
 
             pump.asyncRead(listener, null);
             this.log('✓ Pump configured and asyncRead called.');
-
+            
         } catch (e) {
             this.log(`✗ Error setting up pump: ${e}`);
         }
@@ -320,7 +419,7 @@ var ZoteroInTray = {
     },
     
     handleTrayClick: function() {
-        this.log('🖱️ Tray icon click handled.');
+        this.log('🖱️ Tray icon/hotkey handled.');
         try {
             if (!this.getMainWindowHandle()) {
                 this.log("✗ Could not get main window handle for tray click.");
@@ -328,28 +427,21 @@ var ZoteroInTray = {
             }
 
             const isVisible = this.user32.IsWindowVisible(this.mainWindowHandle);
-            const isMinimized = this.user32.IsIconic(this.mainWindowHandle);
+            const isForeground = this.user32.GetForegroundWindow().toString() === this.mainWindowHandle.toString();
 
-            this.log(`Window state: isHidden=${this.isWindowHidden}, isVisible=${isVisible}, isMinimized=${isMinimized}`);
+            this.log(`Window state: isVisible=${isVisible}, isForeground=${isForeground}, isHiddenByPlugin=${this.isWindowHidden}`);
 
-            if (this.isWindowHidden) {
-                this.log("🔄 Window is hidden by plugin, restoring...");
+            // If the window is visible and is the active foreground window, hide it.
+            // Our internal state this.isWindowHidden helps, but the user could have manually shown it.
+            // So we check if it is visible AND foreground.
+            if (isVisible && isForeground) {
+                this.log("🔄 Window is visible and foreground, hiding...");
+                this.hideMainWindow();
+            } else {
+                this.log("🔄 Window is hidden, minimized, or in background, showing...");
                 this.showMainWindow();
             }
-            else if (isMinimized) {
-                this.log("🔄 Window is minimized, restoring...");
-                this.showMainWindow();
-            }
-            else if (isVisible) {
-                this.log("🔄 Window is in background, bringing to front...");
-                this.user32.SetForegroundWindow(this.mainWindowHandle);
-            }
-            else {
-                this.log("🔄 Unhandled state, attempting to restore window...");
-                this.showMainWindow();
-            }
-        } catch (e)
-        {
+        } catch (e) {
             this.log(`✗ Error in handleTrayClick: ${e}`);
         }
     },
@@ -373,10 +465,17 @@ var ZoteroInTray = {
         }
 
         try {
-            this.log('🖥️ Showing main window...');
+            this.log('🖥️ Showing main window with focus trick...');
             const state = this.windowWasMaximized ? this.constants.SW_MAXIMIZE : this.constants.SW_RESTORE;
+
+            // --- Focus stealing trick ---
+            // 1. Show the window minimized and inactive to avoid focus issues.
+            this.user32.ShowWindow(this.mainWindowHandle, this.constants.SW_MINIMIZE);
+            // 2. Then restore it to its previous state, which brings it to the foreground.
             this.user32.ShowWindow(this.mainWindowHandle, state);
+            // 3. A final call to ensure it has focus.
             this.user32.SetForegroundWindow(this.mainWindowHandle);
+
             this.isWindowHidden = false; // Ensure state is updated
             this.log('✓ Main window shown.');
         } catch (e) {
@@ -412,6 +511,23 @@ var ZoteroInTray = {
         this.log("🧹 Cleaning up all resources...");
         this.isShuttingDown = true;
 
+        if (this.hidePollingInterval) {
+            clearInterval(this.hidePollingInterval);
+            this.hidePollingInterval = null;
+            this.log("✓ Polling interval cleared.");
+        }
+
+        if (this.prefPane) {
+            Zotero.PreferencePanes.unregister(this.prefPane.paneID);
+            this.prefPane = null;
+            this.log("✓ Preferences pane unregistered.");
+        }
+
+        if (this.prefObserver) {
+            Zotero.Prefs.unregisterObserver('extensions.zotero-in-tray.', this.prefObserver);
+            this.log("✓ Preference observer unregistered.");
+        }
+
         if (this.serverSocket) {
             this.serverSocket.close();
             this.log("✓ Server socket closed.");
@@ -427,6 +543,26 @@ var ZoteroInTray = {
         if (this.kernel32) this.kernel32.close();
         
         this.log("✓ Cleanup finished.");
+    },
+
+    tryHideWindowOnStartup: function() {
+        if (this.initialHidePerformed || this.isShuttingDown) {
+            if (this.hidePollingInterval) {
+                clearInterval(this.hidePollingInterval);
+                this.hidePollingInterval = null;
+            }
+            return;
+        }
+
+        if (this.getMainWindowHandle()) {
+            this.log('🚀 Window handle is available. Hiding window now.');
+            this.hideMainWindow();
+            
+            this.initialHidePerformed = true;
+            clearInterval(this.hidePollingInterval);
+            this.hidePollingInterval = null;
+            this.log('✓ Initial auto-hide complete. Polling stopped.');
+        }
     }
 };
 

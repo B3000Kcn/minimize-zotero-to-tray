@@ -1,0 +1,62 @@
+<!-- 
+  This is an XHTML fragment, not a full document. 
+  It is loaded into the Zotero preferences pane.
+-->
+
+<!-- Restart Notice -->
+<groupbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+          xmlns:html="http://www.w3.org/1999/xhtml">
+    <html:p style="font-weight: bold; color: #d9534f;">
+        Important: All settings on this page require a restart of Zotero to take full effect.
+    </html:p>
+</groupbox>
+
+<!-- Global Hotkey Settings -->
+<groupbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+          xmlns:html="http://www.w3.org/1999/xhtml">
+    <caption label="Global Hotkey Settings" />
+    
+    <!-- Hotkey Modifier Keys -->
+    <html:h4>Modifier Keys</html:h4>
+    <html:p>Select at least one modifier key (Ctrl, Alt, Shift).</html:p>
+    <hbox>
+        <checkbox id="hotkey-ctrl" label="Ctrl" preference="extensions.zotero-in-tray.hotkey.ctrl"/>
+        <checkbox id="hotkey-alt" label="Alt" preference="extensions.zotero-in-tray.hotkey.alt"/>
+        <checkbox id="hotkey-shift" label="Shift" preference="extensions.zotero-in-tray.hotkey.shift"/>
+    </hbox>
+    
+    <!-- Hotkey Character -->
+    <html:h4>Main Key</html:h4>
+    <html:p>Enter a single letter or number as the main key for the hotkey (e.g., 'K').</html:p>
+    <html:input type="text" id="hotkey-key" preference="extensions.zotero-in-tray.hotkey.key" maxlength="1" style="width: 50px; text-transform: uppercase;"/>
+</groupbox>
+
+<!-- Startup Settings -->
+<groupbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+          xmlns:html="http://www.w3.org/1999/xhtml">
+    <caption label="Startup Settings" />
+    
+    <!-- Autohide on Startup -->
+    <html:h4>Auto-hide on Startup</html:h4>
+    <html:p>
+        If enabled, Zotero will automatically hide its main window on startup, showing only the tray icon.
+        <html:br/>
+        This is mainly intended for "silent startup" when Zotero is launched on system login.
+    </html:p>
+    <checkbox id="startup-autohide" label="Auto-hide main window on startup" preference="extensions.zotero-in-tray.startup.autohide"/>
+</groupbox>
+
+<!-- Network Settings -->
+<groupbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+          xmlns:html="http://www.w3.org/1999/xhtml">
+    <caption label="Network Settings" />
+    
+    <!-- Communication Port -->
+    <html:h4>Communication Port</html:h4>
+    <html:p>
+        The local port used for communication between the plugin and the tray helper process.
+        <html:br/>
+        It is not recommended to change this unless you encounter a port conflict. Restart Zotero after changing.
+    </html:p>
+    <html:input type="number" id="network-port" preference="extensions.zotero-in-tray.network.port" min="1024" max="65535" style="width: 100px;"/>
+</groupbox> 
