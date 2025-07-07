@@ -46,7 +46,7 @@ All settings can be configured in Zotero via `Edit` > `Preferences` > `Minimize 
   - Enable this to make Zotero start minimized to the tray.
 - **Communication Port**:
   - The plugin and its tray icon helper need a local network port to communicate.
-  - You can change the default port (`23119`) if it conflicts with another application on your system.
+  - You can change the default port (`23120`) if it conflicts with another application on your system.
   - **Note**: All settings require a Zotero restart to take effect.
 
 ## 🛠️ Technical Details & Architecture
