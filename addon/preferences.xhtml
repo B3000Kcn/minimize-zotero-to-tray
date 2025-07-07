@@ -58,5 +58,27 @@
         <html:br/>
         It is not recommended to change this unless you encounter a port conflict. Restart Zotero after changing.
     </html:p>
-    <html:input type="number" id="network-port" preference="extensions.zotero-in-tray.network.port" min="1024" max="65535" style="width: 100px;"/>
+    <html:input type="number" id="network-port" preference="extensions.zotero-in-tray.network.port" min="1024" max="65535" step="1" style="width: 100px;"/>
+
+    <html:div id="recovery-info-box" style="margin-top: 15px; padding: 10px; border: 1px solid #c00; background-color: #fdd; border-radius: 4px; font-size: 9pt;">
+        <html:h4 style="color: #c00; margin-top: 0; margin-bottom: 5px; font-weight: bold;">⚠️ Recovery Instructions</html:h4>
+        <html:p style="margin-bottom: 5px;">
+            Enabling <html:b>"Auto-hide"</html:b> with a conflicting port can make Zotero inaccessible. If this happens, follow these steps:
+        </html:p>
+        <html:ol style="margin: 0; padding-left: 20px;">
+            <html:li>Completely quit Zotero and any `tray_helper.exe` processes.</html:li>
+            <html:li>In your File Explorer, go to: <html:b>%APPDATA%\Zotero\Zotero\Profiles\</html:b> and open the `.default` folder.</html:li>
+            <html:li>Open the `prefs.js` file with a text editor.</html:li>
+            <html:li>Find and change one of the following lines:
+                <html:ul style="margin-top: 5px; padding-left: 15px;">
+                    <html:li>To disable auto-hide: change `startup.autohide", true` to `startup.autohide", false`.</html:li>
+                    <html:li>To fix a port conflict: change `network.port", ...)` to a new number (e.g., `23121`).</html:li>
+                </html:ul>
+            </html:li>
+        </html:ol>
+        <html:p style="margin-top: 10px; margin-bottom: 0;">
+            For full details, copy this link: <html:br/>
+            <html:code>https://github.com/B3000Kcn/zotero-in-tray/blob/main/README.md#troubleshooting</html:code>
+        </html:p>
+    </html:div>
 </groupbox> 
