@@ -8,7 +8,7 @@ full_hotkey := ""
 
 ; --- TCP 客户端设置 ---
 TCP_HOST := "127.0.0.1"
-TCP_PORT := 23119 ; 默认端口
+TCP_PORT := 23120 ; 默认端口
 
 ; 解析命令行参数 (AHK v1 风格)
 Loop, %0%
