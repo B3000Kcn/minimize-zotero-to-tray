@@ -49,6 +49,31 @@ All settings can be configured in Zotero via `Edit` > `Preferences` > `Minimize 
   - You can change the default port (`23120`) if it conflicts with another application on your system.
   - **Note**: All settings require a Zotero restart to take effect.
 
+## 🚑 Troubleshooting
+
+### Zotero Starts Hidden and Won't Show Up
+
+If you enabled **"Auto-hide on Startup"** and the tray icon/hotkey stops working (e.g., due to a port conflict), you might get "locked out" of the Zotero window. Here's how to fix it by directly editing Zotero's configuration file:
+
+1. Completely quit Zotero. Make sure no `zotero.exe` or `tray_helper.exe` processes are running in the Windows Task Manager.
+2. Open the Windows File Explorer.
+3. In the address bar, type `%APPDATA%\\Zotero\\Zotero\\Profiles\\` and press Enter.
+4. You will see a folder with a random name (e.g., `xxxxxxxx.default`). Open it.
+5. Find the file named `prefs.js` and open it with a simple text editor like Notepad.
+6. You now have two options to fix the issue:
+
+    **Option A: Disable the Auto-Hide Feature**
+    This is a surefire way to make Zotero start visibly again, allowing you to re-configure the plugin from its settings.
+    - Search for the line: `user_pref("extensions.zotero-in-tray.startup.autohide", true);`
+    - Change `true` to `false`.
+
+    **Option B: Change the Communication Port**
+    If you suspect a port conflict is the issue, you can assign a new port.
+    - Search for the line containing `extensions.zotero-in-tray.network.port`.
+    - Change the port number to a different value, for example: `user_pref("extensions.zotero-in-tray.network.port", 23121);`
+
+7. Save the `prefs.js` file and start Zotero normally. The problem should be resolved.
+
 ## 🛠️ Technical Details & Architecture
 
 This plugin uses a hybrid architecture to ensure stability on modern Windows systems.
