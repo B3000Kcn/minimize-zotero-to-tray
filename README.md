@@ -10,10 +10,10 @@ A Zotero 7 plugin that lets you minimize Zotero to the tray, show/hide it with a
 
 ## ✨ Core Features
 
-- **Global Hotkey**: Show or hide the Zotero window from anywhere with a customizable global hotkey.
 - **Minimize on Close**: Intercepts all standard window close actions (e.g., 'X' button) and minimizes Zotero to the tray instead.
+- **Global Hotkey**: Show or hide the Zotero window from anywhere with a customizable global hotkey.
+- **Single-Click Show**: A single click on the tray icon brings the main Zotero window to the foreground.
 - **Auto-hide on Startup**: Optionally start Zotero silently in the tray, perfect for running on system startup.
-- **Single-Click Toggle**: A single click on the tray icon shows or hides the main window.
 
 ## 📦 Installation
 
@@ -34,16 +34,17 @@ A Zotero 7 plugin that lets you minimize Zotero to the tray, show/hide it with a
 
 Once installed, the plugin works automatically:
 
-1. **Toggle Visibility**: Use the **global hotkey** you configured or **single-click the tray icon** to show/hide the Zotero window.
-2. **Minimize to Tray**: Close Zotero using any standard method (X button, Alt+F4, etc.) - it will minimize to the system tray instead of closing.
-3. **Completely Quit**: To fully exit Zotero and its tray helper, use the `File` > `Quit` option from the Zotero menu.
+1. **Toggle Visibility**: Use the **global hotkey** you configured to show or hide the Zotero window.
+2. **Show Window**: **Single-click the tray icon** to bring the Zotero window to the front.
+3. **Minimize to Tray**: Close Zotero using any standard method (X button, Alt+F4, etc.) - it will minimize to the system tray instead of closing.
+4. **Completely Quit**: To fully exit Zotero and its tray helper, use the `File` > `Quit` option from the Zotero menu.
 
 ## 🔧 Configuration
 
 All settings can be configured in Zotero via `Edit` > `Preferences` > `Minimize to Tray`.
 
 - **Global Hotkey**:
-  - Define your own key combination (e.g., `Ctrl+Alt+K`) to toggle the Zotero window.
+  - Define your own key combination (e.g., `Ctrl+Alt+K`) to toggle (show/hide) the Zotero window.
 - **Auto-hide on Startup**:
   - Enable this to make Zotero start minimized to the tray.
 - **Communication Port**:
@@ -87,7 +88,7 @@ This plugin uses a hybrid architecture to ensure stability on modern Windows sys
 
 ### How It Works
 
-The `.xpi` plugin file contains the `tray_helper.exe` executable. When Zotero starts, the plugin extracts this helper program to a temporary directory and runs it. The helper's main jobs are to create the tray icon and register the global hotkey. When you click the icon or press the hotkey, it notifies the main Zotero plugin via a local TCP socket to show or hide the Zotero window.
+The `.xpi` plugin file contains the `tray_helper.exe` executable. When Zotero starts, the plugin extracts this helper program to a temporary directory and runs it. The helper's main jobs are to create the tray icon and register the global hotkey. When you click the icon or press the hotkey, it notifies the main Zotero plugin via a local TCP socket to perform the appropriate action (show or toggle).
 
 ### ⚠️ Important Note on Zotero Crashes
 
