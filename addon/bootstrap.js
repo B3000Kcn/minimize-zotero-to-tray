@@ -464,19 +464,22 @@ var ZoteroInTray = {
 
             this.log(`Window state: isVisible=${isVisible}, isIconic=${isIconic}, isForeground=${isForeground}`);
     
-            if (!isVisible || isIconic) {
-                // Case 1: Window is not visible (hidden by us) OR it's minimized to the taskbar.
-                // In both cases, we need to show/restore it.
-                this.log("🔄 Window is hidden or minimized, showing...");
-                this.showMainWindow();
+            if (isIconic) {
+                // Case 1: Window is minimized to the taskbar. Restore it intelligently.
+                this.log("🔄 Window is minimized, restoring...");
+                this.showMainWindow({ forceRestore: true });
+            } else if (!isVisible) {
+                // Case 2: Window was hidden by us. Restore using the saved state.
+                this.log("🔄 Window is hidden by plugin, showing...");
+                this.showMainWindow({ forceRestore: false });
             } else {
-                // Case 2: Window is visible and not minimized.
+                // Case 3: Window is visible and not minimized.
                 if (isForeground) {
-                    // Subcase 2a: It's in the foreground. Hide it.
-                this.log("🔄 Window is visible and foreground, hiding...");
-                this.hideMainWindow();
-            } else {
-                    // Subcase 2b: It's in the background. Bring it to the front.
+                    // Subcase 3a: It's in the foreground. Hide it.
+                    this.log("🔄 Window is visible and foreground, hiding...");
+                    this.hideMainWindow();
+                } else {
+                    // Subcase 3b: It's in the background. Bring it to the front.
                     this.log("🔄 Window is visible but background, bringing to front...");
                     this.bringToFront();
                 }
@@ -527,17 +530,22 @@ var ZoteroInTray = {
         }
     },
 
-    showMainWindow: function() {
+    showMainWindow: function({ forceRestore = false } = {}) {
         if (!this.getMainWindowHandle()) {
             this.log('✗ No main window handle to show.');
             return;
         }
 
         try {
-            // Restore the state based on the last saved value. This is now reliable
-            // because hideMainWindow saves the state correctly.
-            const state = this.windowWasMaximized ? this.constants.SW_MAXIMIZE : this.constants.SW_RESTORE;
-            this.log(`🖥️ Activating main window with saved state: ${state === this.constants.SW_MAXIMIZE ? 'Maximize' : 'Restore'}`);
+            // If restoring from a minimized state (isIconic was true), we must use SW_RESTORE.
+            // SW_RESTORE correctly restores a window to its previous state (maximized or normal).
+            // Otherwise, restore based on the last saved value when we hid the window.
+            const state = (forceRestore || !this.windowWasMaximized)
+                ? this.constants.SW_RESTORE
+                : this.constants.SW_MAXIMIZE;
+
+            const stateName = state === this.constants.SW_MAXIMIZE ? 'Maximize' : 'Restore';
+            this.log(`🖥️ Activating main window. ForceRestore=${forceRestore}. Final State: ${stateName} (${state})`);
     
             const hForegroundWnd = this.user32.GetForegroundWindow();
             const dwForegroundThreadId = this.user32.GetWindowThreadProcessId(hForegroundWnd, null);
