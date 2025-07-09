@@ -10,7 +10,7 @@ A Zotero 7 plugin that lets you minimize Zotero to the tray, show/hide it with a
 
 ## ✨ Core Features
 
-- **Minimize on Close**: Intercepts all standard window close actions (e.g., 'X' button) and minimizes Zotero to the tray instead.
+- **Minimize on Close**: Intercepts all standard window close actions (e.g., clicking the 'X' button, closing from the taskbar or task view) and minimizes Zotero to the tray instead.
 - **Global Hotkey**: Show or hide the Zotero window from anywhere with a customizable global hotkey.
 - **Single-Click Show**: A single click on the tray icon brings the main Zotero window to the foreground.
 - **Auto-hide on Startup**: Optionally start Zotero silently in the tray, perfect for running on system startup.
@@ -36,7 +36,7 @@ Once installed, the plugin works automatically:
 
 1. **Toggle Visibility**: Use the **global hotkey** you configured to show or hide the Zotero window.
 2. **Show Window**: **Single-click the tray icon** to bring the Zotero window to the front.
-3. **Minimize to Tray**: Close Zotero using any standard method (X button, Alt+F4, etc.) - it will minimize to the system tray instead of closing.
+3. **Minimize to Tray**: Close the Zotero window using any standard method (e.g., 'X' button, Alt+F4, from the taskbar, or from the Task View) - it will minimize to the system tray instead of closing.
 4. **Completely Quit**: To fully exit Zotero and its tray helper, use the `File` > `Quit` option from the Zotero menu.
 
 ## 🔧 Configuration
