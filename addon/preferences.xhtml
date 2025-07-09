@@ -49,8 +49,8 @@
 <!-- Network Settings -->
 <groupbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
           xmlns:html="http://www.w3.org/1999/xhtml">
-    <caption label="Network Settings" />
-    
+    <caption label="Advanced Network Settings" />
+
     <!-- Communication Port -->
     <html:h4>Communication Port</html:h4>
     <html:p>
@@ -58,7 +58,7 @@
         <html:br/>
         It is not recommended to change this unless you encounter a port conflict. Restart Zotero after changing.
     </html:p>
-    <html:input type="number" id="network-port" preference="extensions.zotero-in-tray.network.port" min="1024" max="65535" step="1" style="width: 100px;"/>
+    <html:input type="text" id="network-port" preference="extensions.zotero-in-tray.network.port" maxlength="5" style="width: 100px;"/>
 
     <html:div id="recovery-info-box" style="margin-top: 15px; padding: 10px; border: 1px solid #c00; background-color: #fdd; border-radius: 4px; font-size: 9pt;">
         <html:h4 style="color: #c00; margin-top: 0; margin-bottom: 5px; font-weight: bold;">⚠️ Recovery Instructions</html:h4>
@@ -77,8 +77,8 @@
             </html:li>
         </html:ol>
         <html:p style="margin-top: 10px; margin-bottom: 0;">
-            For full details, copy this link: <html:br/>
-            <html:code>https://github.com/B3000Kcn/zotero-in-tray/blob/main/README.md#troubleshooting</html:code>
+            For full details, see the project homepage: <html:br/>
+            <html:code>https://github.com/B3000Kcn/minimize-zotero-to-tray</html:code>
         </html:p>
     </html:div>
 </groupbox> 
