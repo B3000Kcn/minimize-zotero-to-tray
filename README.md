@@ -1,3 +1,5 @@
+![Plugin Icon](addon/content/icons/favicon.png)
+
 # Minimize Zotero To Tray
 
 ![GitHub release](https://img.shields.io/github/v/release/B3000Kcn/minimize-zotero-to-tray)
