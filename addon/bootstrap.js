@@ -61,6 +61,10 @@ var ZoteroInTray = {
         this.version = version;
         this.rootURI = rootURI;
         
+        // Reset state for re-enabling plugin without Zotero restart
+        this.isShuttingDown = false;
+        this.initialHidePerformed = false;
+        
         try {
             // Define core components
             this.Cc = Components.classes;
@@ -453,11 +457,11 @@ var ZoteroInTray = {
                 this.log("✗ Could not get main window handle for tray click.");
                 return;
             }
-    
+
             const isVisible = this.user32.IsWindowVisible(this.mainWindowHandle);
             const isIconic = this.user32.IsIconic(this.mainWindowHandle);
             const isForeground = this.user32.GetForegroundWindow().toString() === this.mainWindowHandle.toString();
-    
+
             this.log(`Window state: isVisible=${isVisible}, isIconic=${isIconic}, isForeground=${isForeground}`);
     
             if (!isVisible || isIconic) {
@@ -469,9 +473,9 @@ var ZoteroInTray = {
                 // Case 2: Window is visible and not minimized.
                 if (isForeground) {
                     // Subcase 2a: It's in the foreground. Hide it.
-                    this.log("🔄 Window is visible and foreground, hiding...");
-                    this.hideMainWindow();
-                } else {
+                this.log("🔄 Window is visible and foreground, hiding...");
+                this.hideMainWindow();
+            } else {
                     // Subcase 2b: It's in the background. Bring it to the front.
                     this.log("🔄 Window is visible but background, bringing to front...");
                     this.bringToFront();
@@ -528,7 +532,7 @@ var ZoteroInTray = {
             this.log('✗ No main window handle to show.');
             return;
         }
-    
+
         try {
             // Restore the state based on the last saved value. This is now reliable
             // because hideMainWindow saves the state correctly.
@@ -545,7 +549,7 @@ var ZoteroInTray = {
             // Show the window in its correct state (maximized or restored)
             this.user32.ShowWindow(this.mainWindowHandle, state);
             this.user32.SetForegroundWindow(this.mainWindowHandle);
-    
+
             // Detach the thread input
             this.user32.AttachThreadInput(dwCurrentThreadId, dwForegroundThreadId, false);
     
@@ -615,6 +619,8 @@ var ZoteroInTray = {
         
         if (this.user32) this.user32.close();
         if (this.kernel32) this.kernel32.close();
+        
+        this.mainWindowHandle = null; // Clear handle on cleanup
         
         this.log("✓ Cleanup finished.");
     },
