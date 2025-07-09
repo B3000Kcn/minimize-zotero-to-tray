@@ -25,7 +25,7 @@ var ZoteroInTray = {
     mainWindowHandle: null,
     lockedWindows: new Map(),
     isWindowHidden: false,
-    windowWasMaximized: false,
+    windowWasMaximized: false, // Reverted to simple boolean logic
     isActuallyQuitting: false,
     initialHidePerformed: false,
     hidePollingInterval: null,
@@ -140,6 +140,12 @@ var ZoteroInTray = {
             this.user32.IsZoomed = this.user32.declare("IsZoomed", this.ctypes.winapi_abi, this.ctypes.bool, this.ctypes.voidptr_t);
             this.user32.GetForegroundWindow = this.user32.declare("GetForegroundWindow", this.ctypes.winapi_abi, this.ctypes.voidptr_t);
             this.user32.IsIconic = this.user32.declare("IsIconic", this.ctypes.winapi_abi, this.ctypes.bool, this.ctypes.voidptr_t);
+            
+            // New functions for robust focus handling
+            this.kernel32.GetCurrentThreadId = this.kernel32.declare("GetCurrentThreadId", this.ctypes.winapi_abi, this.ctypes.uint32_t);
+            this.user32.GetWindowThreadProcessId = this.user32.declare("GetWindowThreadProcessId", this.ctypes.winapi_abi, this.ctypes.uint32_t, this.ctypes.voidptr_t, this.ctypes.voidptr_t);
+            this.user32.AttachThreadInput = this.user32.declare("AttachThreadInput", this.ctypes.winapi_abi, this.ctypes.bool, this.ctypes.uint32_t, this.ctypes.uint32_t, this.ctypes.bool);
+
             this.log("✓ Windows API functions declared.");
         } catch (e) {
             this.log("✗ Error declaring Windows API functions: " + e);
@@ -332,23 +338,45 @@ var ZoteroInTray = {
     },
 
     getMainWindowHandle: function() {
+        // If we already have a valid handle, do nothing.
         if (this.mainWindowHandle && !this.mainWindowHandle.isNull()) {
             return true;
         }
+
+        // --- Primary Method: Get handle directly from Zotero's window object ---
+        // This is the most reliable way to get the correct handle.
+        if (this.mainWindow) {
+            try {
+                // nsIWebBrowserChrome.getNativeWindowHandle() returns a native pointer
+                const handlePtr = this.mainWindow.getNativeWindowHandle();
+                if (handlePtr && !handlePtr.isNull()) {
+                    this.mainWindowHandle = handlePtr;
+                    this.log("✓ Found main window handle via getNativeWindowHandle(): " + this.mainWindowHandle.toString());
+                    return true;
+                }
+            } catch (e) {
+                this.log(`✗ Failed to get window handle via getNativeWindowHandle(). Error: ${e}`);
+            }
+        }
+        
+        this.log('🤔 Could not get handle from window object, falling back to FindWindowW...');
+
+        // --- Fallback Method: Find window by class name (less reliable) ---
+        // This is kept as a fallback but is prone to grabbing the wrong window (e.g., Firefox).
         try {
-            let windowClasses = ["MozillaWindowClass", "MozillaDialogClass"];
-            for (let className of windowClasses) {
-                let handle = this.user32.FindWindowW(this.ctypes.char16_t.array()(className), null);
+            const windowClasses = ["MozillaWindowClass", "MozillaDialogClass"];
+            for (const className of windowClasses) {
+                const handle = this.user32.FindWindowW(this.ctypes.char16_t.array()(className), null);
                 if (handle && !handle.isNull()) {
                     this.mainWindowHandle = handle;
-                    this.log("✓ Found main window handle: " + handle.toString());
+                    this.log("✓ Found main window handle via FindWindowW() fallback: " + this.mainWindowHandle.toString());
                     return true;
                 }
             }
-            this.log("✗ Failed to get main window handle");
+            this.log("✗ Fallback failed. Could not find main window handle.");
             return false;
         } catch (e) {
-            this.log("Error getting main window handle: " + e);
+            this.log("✗ Error during fallback window search: " + e);
             return false;
         }
     },
@@ -425,21 +453,29 @@ var ZoteroInTray = {
                 this.log("✗ Could not get main window handle for tray click.");
                 return;
             }
-
+    
             const isVisible = this.user32.IsWindowVisible(this.mainWindowHandle);
+            const isIconic = this.user32.IsIconic(this.mainWindowHandle);
             const isForeground = this.user32.GetForegroundWindow().toString() === this.mainWindowHandle.toString();
-
-            this.log(`Window state: isVisible=${isVisible}, isForeground=${isForeground}, isHiddenByPlugin=${this.isWindowHidden}`);
-
-            // If the window is visible and is the active foreground window, hide it.
-            // Our internal state this.isWindowHidden helps, but the user could have manually shown it.
-            // So we check if it is visible AND foreground.
-            if (isVisible && isForeground) {
-                this.log("🔄 Window is visible and foreground, hiding...");
-                this.hideMainWindow();
-            } else {
-                this.log("🔄 Window is hidden, minimized, or in background, showing...");
+    
+            this.log(`Window state: isVisible=${isVisible}, isIconic=${isIconic}, isForeground=${isForeground}`);
+    
+            if (!isVisible || isIconic) {
+                // Case 1: Window is not visible (hidden by us) OR it's minimized to the taskbar.
+                // In both cases, we need to show/restore it.
+                this.log("🔄 Window is hidden or minimized, showing...");
                 this.showMainWindow();
+            } else {
+                // Case 2: Window is visible and not minimized.
+                if (isForeground) {
+                    // Subcase 2a: It's in the foreground. Hide it.
+                    this.log("🔄 Window is visible and foreground, hiding...");
+                    this.hideMainWindow();
+                } else {
+                    // Subcase 2b: It's in the background. Bring it to the front.
+                    this.log("🔄 Window is visible but background, bringing to front...");
+                    this.bringToFront();
+                }
             }
         } catch (e) {
             this.log(`✗ Error in handleTrayClick: ${e}`);
@@ -449,12 +485,41 @@ var ZoteroInTray = {
     hideMainWindow: function() {
         if (!this.getMainWindowHandle()) return;
         try {
+            // This is the crucial part: we check and save the maximized state
+            // *right before* we hide the window.
             this.windowWasMaximized = this.user32.IsZoomed(this.mainWindowHandle);
-            this.log(`Hiding main window. Maximized state: ${this.windowWasMaximized}`);
+            this.log(`Hiding main window. Maximized state saved: ${this.windowWasMaximized}`);
             this.user32.ShowWindow(this.mainWindowHandle, this.constants.SW_HIDE);
             this.isWindowHidden = true;
         } catch (e) {
             this.log("✗ Error hiding main window: " + e);
+        }
+    },
+
+    bringToFront: function() {
+        if (!this.getMainWindowHandle()) {
+            this.log('✗ No main window handle to bring to front.');
+            return;
+        }
+
+        try {
+            this.log('🖥️ Bringing window to front without changing state...');
+            
+            const hForegroundWnd = this.user32.GetForegroundWindow();
+            const dwCurrentThreadId = this.kernel32.GetCurrentThreadId();
+            const dwForegroundThreadId = this.user32.GetWindowThreadProcessId(hForegroundWnd, null);
+
+            this.user32.AttachThreadInput(dwCurrentThreadId, dwForegroundThreadId, true);
+            
+            // Just set it as foreground. Don't use ShowWindow, as that could
+            // change the maximized/restored state incorrectly.
+            this.user32.SetForegroundWindow(this.mainWindowHandle);
+            
+            this.user32.AttachThreadInput(dwCurrentThreadId, dwForegroundThreadId, false);
+
+            this.log('✓ Main window brought to front.');
+        } catch (e) {
+            this.log(`✗ Error bringing window to front: ${e}`);
         }
     },
 
@@ -463,21 +528,30 @@ var ZoteroInTray = {
             this.log('✗ No main window handle to show.');
             return;
         }
-
+    
         try {
-            this.log('🖥️ Showing main window with focus trick...');
+            // Restore the state based on the last saved value. This is now reliable
+            // because hideMainWindow saves the state correctly.
             const state = this.windowWasMaximized ? this.constants.SW_MAXIMIZE : this.constants.SW_RESTORE;
-
-            // --- Focus stealing trick ---
-            // 1. Show the window minimized and inactive to avoid focus issues.
-            this.user32.ShowWindow(this.mainWindowHandle, this.constants.SW_MINIMIZE);
-            // 2. Then restore it to its previous state, which brings it to the foreground.
+            this.log(`🖥️ Activating main window with saved state: ${state === this.constants.SW_MAXIMIZE ? 'Maximize' : 'Restore'}`);
+    
+            const hForegroundWnd = this.user32.GetForegroundWindow();
+            const dwForegroundThreadId = this.user32.GetWindowThreadProcessId(hForegroundWnd, null);
+            const dwCurrentThreadId = this.kernel32.GetCurrentThreadId();
+    
+            // Attach our thread's input processing to the foreground window's thread
+            this.user32.AttachThreadInput(dwCurrentThreadId, dwForegroundThreadId, true);
+            
+            // Show the window in its correct state (maximized or restored)
             this.user32.ShowWindow(this.mainWindowHandle, state);
-            // 3. A final call to ensure it has focus.
             this.user32.SetForegroundWindow(this.mainWindowHandle);
-
-            this.isWindowHidden = false; // Ensure state is updated
+    
+            // Detach the thread input
+            this.user32.AttachThreadInput(dwCurrentThreadId, dwForegroundThreadId, false);
+    
+            this.isWindowHidden = false;
             this.log('✓ Main window shown.');
+    
         } catch (e) {
             this.log(`✗ Error showing main window: ${e}`);
         }
