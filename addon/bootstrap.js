@@ -144,11 +144,14 @@ var ZoteroInTray = {
             this.user32.IsZoomed = this.user32.declare("IsZoomed", this.ctypes.winapi_abi, this.ctypes.bool, this.ctypes.voidptr_t);
             this.user32.GetForegroundWindow = this.user32.declare("GetForegroundWindow", this.ctypes.winapi_abi, this.ctypes.voidptr_t);
             this.user32.IsIconic = this.user32.declare("IsIconic", this.ctypes.winapi_abi, this.ctypes.bool, this.ctypes.voidptr_t);
-            
-            // New functions for robust focus handling
+
+            // Functions for robust focus handling
             this.kernel32.GetCurrentThreadId = this.kernel32.declare("GetCurrentThreadId", this.ctypes.winapi_abi, this.ctypes.uint32_t);
             this.user32.GetWindowThreadProcessId = this.user32.declare("GetWindowThreadProcessId", this.ctypes.winapi_abi, this.ctypes.uint32_t, this.ctypes.voidptr_t, this.ctypes.voidptr_t);
             this.user32.AttachThreadInput = this.user32.declare("AttachThreadInput", this.ctypes.winapi_abi, this.ctypes.bool, this.ctypes.uint32_t, this.ctypes.uint32_t, this.ctypes.bool);
+
+            // PID-based window finding functions
+            this.kernel32.GetCurrentProcessId = this.kernel32.declare("GetCurrentProcessId", this.ctypes.winapi_abi, this.ctypes.uint32_t);
 
             this.log("✓ Windows API functions declared.");
         } catch (e) {
@@ -347,43 +350,45 @@ var ZoteroInTray = {
             return true;
         }
 
-        // --- Primary Method: Get handle directly from Zotero's window object ---
-        // This is the most reliable way to get the correct handle.
-        if (this.mainWindow) {
-            try {
-                // nsIWebBrowserChrome.getNativeWindowHandle() returns a native pointer
-                const handlePtr = this.mainWindow.getNativeWindowHandle();
-                if (handlePtr && !handlePtr.isNull()) {
-                    this.mainWindowHandle = handlePtr;
-                    this.log("✓ Found main window handle via getNativeWindowHandle(): " + this.mainWindowHandle.toString());
-                    return true;
-                }
-            } catch (e) {
-                this.log(`✗ Failed to get window handle via getNativeWindowHandle(). Error: ${e}`);
-            }
-        }
-        
-        this.log('🤔 Could not get handle from window object, falling back to FindWindowW...');
+        // --- ONLY METHOD: PID-based approach ---
+        this.log("🔍 Attempting PID-based window finding...");
 
-        // --- Fallback Method: Find window by class name (less reliable) ---
-        // This is kept as a fallback but is prone to grabbing the wrong window (e.g., Firefox).
         try {
-            const windowClasses = ["MozillaWindowClass", "MozillaDialogClass"];
+            // Get current process PID
+            const currentPID = this.kernel32.GetCurrentProcessId();
+            this.log(`Current process PID: ${currentPID}`);
+
+            // Use a simple approach: check if the first MozillaWindowClass window belongs to our PID
+            const windowClasses = ["MozillaWindowClass"];
             for (const className of windowClasses) {
                 const handle = this.user32.FindWindowW(this.ctypes.char16_t.array()(className), null);
                 if (handle && !handle.isNull()) {
-                    this.mainWindowHandle = handle;
-                    this.log("✓ Found main window handle via FindWindowW() fallback: " + this.mainWindowHandle.toString());
-                    return true;
+                    // Check if this window belongs to our process
+                    const processIdPtr = this.ctypes.uint32_t();
+                    this.user32.GetWindowThreadProcessId(handle, processIdPtr.address());
+                    const windowPID = processIdPtr.value;
+
+                    this.log(`Found window handle: ${handle.toString()}, belongs to PID: ${windowPID}`);
+
+                    if (windowPID === currentPID) {
+                        this.mainWindowHandle = handle;
+                        this.log("✅ SUCCESS: Found window handle via PID verification: " + this.mainWindowHandle.toString());
+                        return true;
+                    } else {
+                        this.log(`❌ Window belongs to different PID (${windowPID}), not our PID (${currentPID})`);
+                    }
                 }
             }
-            this.log("✗ Fallback failed. Could not find main window handle.");
-            return false;
+            this.log("❌ No MozillaWindowClass window found belonging to our PID");
         } catch (e) {
-            this.log("✗ Error during fallback window search: " + e);
-            return false;
+            this.log(`❌ Error during PID-based window finding: ${e}`);
         }
+
+        this.log('❌ PID-based method failed.');
+        return false;
     },
+
+
 
     setupDualInterceptForExistingWindows: function() {
         this.log("🔥 Setting up DUAL INTERCEPT for existing windows...");
@@ -393,10 +398,13 @@ var ZoteroInTray = {
         }
         if (mainWindows.length > 0) {
             this.mainWindow = mainWindows[0];
-            this.getMainWindowHandle();
-            this.log(`✓ DUAL INTERCEPT set up for ${mainWindows.length} windows`);
+            // Only try to get handle if we have a valid Zotero window
+            if (this.mainWindow) {
+                this.getMainWindowHandle();
+            }
+            this.log(`✓ DUAL INTERCEPT set up for ${mainWindows.length} Zotero windows`);
         } else {
-            this.log("No existing windows found, will wait for onMainWindowLoad");
+            this.log("No existing Zotero windows found, will wait for onMainWindowLoad");
         }
     },
 
@@ -446,7 +454,7 @@ var ZoteroInTray = {
         }
     },
 
-    onWindowClosing: function(window) {
+    onWindowClosing: function() {
         this.hideMainWindow();
     },
     
@@ -642,14 +650,18 @@ var ZoteroInTray = {
             return;
         }
 
-        if (this.getMainWindowHandle()) {
-            this.log('🚀 Window handle is available. Hiding window now.');
+        // Only proceed if we have a valid main window object AND can get its handle
+        // This prevents accidentally hiding Firefox or other Mozilla windows
+        if (this.mainWindow && this.getMainWindowHandle()) {
+            this.log('🚀 Zotero window handle is available. Hiding window now.');
             this.hideMainWindow();
-            
+
             this.initialHidePerformed = true;
             clearInterval(this.hidePollingInterval);
             this.hidePollingInterval = null;
             this.log('✓ Initial auto-hide complete. Polling stopped.');
+        } else {
+            this.log('⏳ Waiting for Zotero main window to be ready...');
         }
     }
 };
@@ -666,8 +678,26 @@ function shutdown() {
 function onMainWindowLoad({ window }) {
     ZoteroInTray.log("🔥 Main window loaded: " + window.location.href);
     ZoteroInTray.mainWindow = window;
-    ZoteroInTray.getMainWindowHandle();
     ZoteroInTray.lockWindow(window);
+
+    // Try to get window handle immediately
+    if (!ZoteroInTray.getMainWindowHandle()) {
+        ZoteroInTray.log("⏳ Initial handle acquisition failed, will retry...");
+        // Retry after a short delay to ensure window is fully ready
+        setTimeout(() => {
+            if (!ZoteroInTray.getMainWindowHandle()) {
+                ZoteroInTray.log("⚠️ Second attempt to get window handle failed");
+                // Try one more time after document is fully loaded
+                if (window.document.readyState !== 'complete') {
+                    window.addEventListener('load', () => {
+                        setTimeout(() => {
+                            ZoteroInTray.getMainWindowHandle();
+                        }, 100);
+                    }, { once: true });
+                }
+            }
+        }, 500);
+    }
 }
 function onMainWindowUnload({ window }) {
     ZoteroInTray.log("🔥 Main window unloaded: " + window.location.href);
