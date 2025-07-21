@@ -98,6 +98,25 @@ If Zotero crashes or is terminated abnormally (e.g., via Task Manager), the main
 
 It consumes minimal resources, but you may want to close it manually using the Windows Task Manager. The process will be automatically replaced the next time you start Zotero. Normal Zotero shutdown procedures will clean up the process correctly.
 
+## 🔨 Build It Yourself
+
+This plugin, due to its operational methods (e.g., extracting and running an `.exe` file, using global hotkeys), can sometimes be flagged by antivirus software as suspicious. To ensure complete transparency and allow users full control, we provide instructions for building the plugin yourself.
+
+1.  **Download the project**: Clone or download the source code from the GitHub repository.
+
+2.  **Download Ahk2Exe**: Get the `Ahk2Exe` compiler from the official AutoHotkey releases page: [https://github.com/AutoHotkey/Ahk2Exe/releases](https://github.com/AutoHotkey/Ahk2Exe/releases).
+
+3.  **Convert `tray_helper.ahk` to `exe`**:
+    *   Locate `tray_helper.ahk` in the project's `bin` folder (`addon/bin/tray_helper.ahk`).
+    *   Use `Ahk2Exe` to convert `tray_helper.ahk` into an executable (`.exe`) file.
+    *   During this process, `Ahk2Exe` will prompt you for an icon in `.ico` format. You can use the `zotero_128.ico` file found in the same `bin` folder (`addon/bin/zotero_128.ico`), or provide your own custom `.ico` icon.
+
+4.  **Package the plugin**:
+    *   Open PowerShell.
+    *   Navigate to the project's `scripts` folder (`scripts/`).
+    *   Run the `build.ps1` script: `.\build.ps1`
+    *   The packaged plugin (`.xpi` file) will be generated in the project's root directory.
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
