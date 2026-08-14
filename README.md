@@ -77,6 +77,16 @@ If you enabled **"Auto-hide on Startup"** and the tray icon/hotkey stops working
 
 7. Save the `prefs.js` file and start Zotero normally. The problem should be resolved.
 
+### Phantom or Duplicate Tray Icon
+If you see a non-responsive or duplicate Zotero icon in your system tray after closing Zotero, the `tray_helper.exe` process may not have terminated properly. This can occasionally happen on Windows 11 (25H2) or after abnormal shutdowns.
+
+To fix this:
+1. Open **Task Manager** (`Ctrl` + `Shift` + `Esc`).
+2. Locate `tray_helper.exe` in the **Details** or **Processes** tab.
+3. Right-click it and select **End Task**.
+
+The orphan icon will disappear, and a fresh, functional icon will automatically regenerate the next time you launch Zotero.
+
 ## 🛠️ Technical Details & Architecture
 
 This plugin uses a hybrid architecture to ensure stability on modern Windows systems.
