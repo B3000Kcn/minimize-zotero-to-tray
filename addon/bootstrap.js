@@ -1,6 +1,6 @@
 // Zotero-in-Tray with TCP Helper Process
-// This version uses an external AutoHotkey executable for the tray icon
-// to avoid js-ctypes crashes on Windows 11. Communication is via TCP sockets.
+// Uses a small external Win32 executable for the tray icon and global hotkey
+// to avoid js-ctypes WNDPROC crashes on Windows 11. Communication is via TCP sockets.
 
 var ZoteroInTray = {
     // Plugin metadata
@@ -33,7 +33,12 @@ var ZoteroInTray = {
     // Helper Process
     helperProcess: null,
     helperExeName: 'tray_helper.exe',
+    helperDirName: 'minimize-zotero-to-tray',
+    helperClassName: 'ZoteroTrayHelperWindowClass',
+    helperWindowTitle: 'ZoteroTrayHelper',
     helperPath: null,
+    helperPausedByUser: false,
+    helperLaunchRetries: 0,
     isShuttingDown: false,
     relaunchDelay: 2000, // ms
     prefObserver: null,
@@ -49,6 +54,8 @@ var ZoteroInTray = {
         SW_RESTORE: 9,
         SW_MAXIMIZE: 3,
         SW_MINIMIZE: 6,
+        WM_CLOSE: 0x0010,
+        SMTO_ABORTIFHUNG: 0x0002,
     },
 
     // Mozilla Components
@@ -63,6 +70,8 @@ var ZoteroInTray = {
         
         // Reset state for re-enabling plugin without Zotero restart
         this.isShuttingDown = false;
+        this.helperPausedByUser = false;
+        this.helperLaunchRetries = 0;
         this.initialHidePerformed = false;
         
         try {
@@ -153,6 +162,20 @@ var ZoteroInTray = {
             // PID-based window finding functions
             this.kernel32.GetCurrentProcessId = this.kernel32.declare("GetCurrentProcessId", this.ctypes.winapi_abi, this.ctypes.uint32_t);
 
+            // Clean helper window shutdown
+            this.user32.SendMessageTimeoutW = this.user32.declare(
+                "SendMessageTimeoutW",
+                this.ctypes.winapi_abi,
+                this.ctypes.intptr_t,
+                this.ctypes.voidptr_t,
+                this.ctypes.uint32_t,
+                this.ctypes.uintptr_t,
+                this.ctypes.intptr_t,
+                this.ctypes.uint32_t,
+                this.ctypes.uint32_t,
+                this.ctypes.voidptr_t
+            );
+
             this.log("✓ Windows API functions declared.");
         } catch (e) {
             this.log("✗ Error declaring Windows API functions: " + e);
@@ -191,11 +214,89 @@ var ZoteroInTray = {
         return args;
     },
 
-    launchHelper: function() {
-        if (this.isShuttingDown) {
-            this.log("Shutdown in progress, aborting helper launch.");
-                 return;
+    getHelperDirectory: function(cc = this.Cc, ci = this.Ci) {
+        const dirService = cc['@mozilla.org/file/directory_service;1'].getService(ci.nsIProperties);
+        for (const key of ['ProfLD', 'ProfD', 'TmpD']) {
+            try {
+                const dir = dirService.get(key, ci.nsIFile);
+                if (key !== 'TmpD') {
+                    dir.append(this.helperDirName);
+                    if (!dir.exists()) {
+                        dir.create(ci.nsIFile.DIRECTORY_TYPE, 0o755);
+                    }
+                }
+                return dir;
+            } catch (e) {
+                // Fall back to next directory key
             }
+        }
+        throw new Error("Could not resolve helper directory.");
+    },
+
+    fileMatchesBytes: function(file, expectedBytes) {
+        if (!file.exists() || file.fileSize !== expectedBytes.length) {
+            return false;
+        }
+        let istream = null;
+        let bstream = null;
+        try {
+            istream = this.Cc["@mozilla.org/network/file-input-stream;1"].createInstance(this.Ci.nsIFileInputStream);
+            istream.init(file, 0x01, 0, 0);
+            bstream = this.Cc["@mozilla.org/binaryinputstream;1"].createInstance(this.Ci.nsIBinaryInputStream);
+            bstream.setInputStream(istream);
+            const existingBytes = bstream.readBytes(expectedBytes.length);
+            return existingBytes === expectedBytes;
+        } catch (e) {
+            return false;
+        } finally {
+            if (bstream) try { bstream.close(); } catch (e) {}
+            if (istream) try { istream.close(); } catch (e) {}
+        }
+    },
+
+    stopHelperProcess: function() {
+        let closedGracefully = false;
+        if (this.user32 && this.user32.FindWindowW && this.user32.SendMessageTimeoutW) {
+            try {
+                const helperHwnd = this.user32.FindWindowW(
+                    this.ctypes.char16_t.array()(this.helperClassName),
+                    this.ctypes.char16_t.array()(this.helperWindowTitle)
+                );
+                if (helperHwnd && !helperHwnd.isNull()) {
+                    const res = this.user32.SendMessageTimeoutW(
+                        helperHwnd,
+                        this.constants.WM_CLOSE,
+                        0,
+                        0,
+                        this.constants.SMTO_ABORTIFHUNG,
+                        500,
+                        null
+                    );
+                    if (res) {
+                        closedGracefully = true;
+                        this.log("✓ Closed helper window cleanly.");
+                    }
+                }
+            } catch (e) {
+                this.log(`✗ Error closing helper window cleanly: ${e}`);
+            }
+        }
+
+        if (!closedGracefully && this.helperProcess) {
+            try {
+                this.helperProcess.kill();
+                this.log("Terminated helper process.");
+            } catch (e) {
+                this.log(`✗ Error terminating helper process: ${e}`);
+            }
+        }
+    },
+
+    launchHelper: function() {
+        if (this.isShuttingDown || this.helperPausedByUser) {
+            this.log("Helper launch skipped (shutdown or paused by user).");
+            return;
+        }
         this.log("🚀 Launching helper process...");
         try {
             const jarPath = this.rootURI.substring(this.rootURI.startsWith("jar:") ? 4 : 0, this.rootURI.indexOf('!'));
@@ -204,31 +305,49 @@ var ZoteroInTray = {
             
             const zr = this.Cc["@mozilla.org/libjar/zip-reader;1"].createInstance(this.Ci.nsIZipReader);
             zr.open(xpiFile);
-            
-            const entryPath = "bin/" + this.helperExeName;
-            if (!zr.hasEntry(entryPath)) {
+            let bytes = null;
+            try {
+                const entryPath = "bin/" + this.helperExeName;
+                if (!zr.hasEntry(entryPath)) {
+                    throw new Error(`Helper executable not found in XPI at path: ${entryPath}`);
+                }
+                const inputStream = zr.getInputStream(entryPath);
+
+                const binaryInputStream = this.Cc["@mozilla.org/binaryinputstream;1"].createInstance(this.Ci.nsIBinaryInputStream);
+                binaryInputStream.setInputStream(inputStream);
+                bytes = binaryInputStream.readBytes(binaryInputStream.available());
+                binaryInputStream.close();
+            } finally {
                 zr.close();
-                throw new Error(`Helper executable not found in XPI at path: ${entryPath}`);
             }
-            const inputStream = zr.getInputStream(entryPath);
 
-            const binaryInputStream = this.Cc["@mozilla.org/binaryinputstream;1"].createInstance(this.Ci.nsIBinaryInputStream);
-            binaryInputStream.setInputStream(inputStream);
-            const bytes = binaryInputStream.readBytes(binaryInputStream.available());
-            zr.close();
-
-            const dirService = this.Cc['@mozilla.org/file/directory_service;1'].getService(this.Ci.nsIDirectoryService);
-            const tmpDir = dirService.get("TmpD", this.Ci.nsIFile);
-
-            const helperFile = tmpDir.clone();
+            const helperDir = this.getHelperDirectory();
+            const helperFile = helperDir.clone();
             helperFile.append(this.helperExeName);
             this.helperPath = helperFile.path;
 
-            const ostream = this.Cc["@mozilla.org/network/file-output-stream;1"].createInstance(this.Ci.nsIFileOutputStream);
-            ostream.init(helperFile, 0x02 | 0x08 | 0x20, 0o755, 0);
-            ostream.write(bytes, bytes.length);
-            ostream.close();
-            this.log(`✓ Helper extracted to: ${this.helperPath}`);
+            if (!this.fileMatchesBytes(helperFile, bytes)) {
+                this.stopHelperProcess();
+                try {
+                    const ostream = this.Cc["@mozilla.org/network/file-output-stream;1"].createInstance(this.Ci.nsIFileOutputStream);
+                    ostream.init(helperFile, 0x02 | 0x08 | 0x20, 0o755, 0);
+                    ostream.write(bytes, bytes.length);
+                    ostream.close();
+                    this.helperLaunchRetries = 0;
+                    this.log(`✓ Helper extracted to: ${this.helperPath}`);
+                } catch (writeErr) {
+                    if (this.helperLaunchRetries < 3) {
+                        this.helperLaunchRetries++;
+                        this.log(`⏳ Helper file is still busy, retrying extraction (${this.helperLaunchRetries}/3)...`);
+                        setTimeout(() => this.launchHelper(), 250);
+                        return;
+                    }
+                    throw writeErr;
+                }
+            } else {
+                this.helperLaunchRetries = 0;
+                this.log(`✓ Helper already up to date at: ${this.helperPath}`);
+            }
 
             const process = this.Cc["@mozilla.org/process/util;1"].createInstance(this.Ci.nsIProcess);
             process.init(helperFile);
@@ -239,11 +358,13 @@ var ZoteroInTray = {
                 if (topic === "process-finished" || topic === "process-failed") {
                     this.log(`Helper process terminated (topic: ${topic}). Exit code: ${data}`);
                     this.helperProcess = null;
-                    if (!this.isShuttingDown) {
+                    if (!this.isShuttingDown && !this.helperPausedByUser) {
                         this.log(`🤔 Helper process terminated unexpectedly. Restarting in ${this.relaunchDelay / 1000}s...`);
                         setTimeout(() => {
-                            this.log("Attempting to relaunch helper process...");
-                            this.launchHelper();
+                            if (!this.isShuttingDown && !this.helperPausedByUser) {
+                                this.log("Attempting to relaunch helper process...");
+                                this.launchHelper();
+                            }
                         }, this.relaunchDelay);
                     }
                 }
@@ -295,8 +416,9 @@ var ZoteroInTray = {
         this.prefObserver = (branch, name) => {
             if (name.startsWith('extensions.zotero-in-tray.')) {
                 this.log(`Preference changed: ${name}. Restarting helper process.`);
+                this.helperPausedByUser = false;
                 if (this.helperProcess) {
-                    this.helperProcess.kill(); 
+                    this.stopHelperProcess();
                 } else {
                     this.log("Helper process was not running, launching it now.");
                     this.launchHelper();
@@ -313,23 +435,43 @@ var ZoteroInTray = {
         try {
             const pump = this.Cc['@mozilla.org/network/input-stream-pump;1'].createInstance(this.Ci.nsIInputStreamPump);
             pump.init(inputStream, -1, -1, true);
+            let received = '';
+            let handled = false;
+
+            const dispatchCommand = (cmd) => {
+                if (handled) return;
+                if (cmd === 'CLICKED') {
+                    handled = true;
+                    const threadManager = this.Cc["@mozilla.org/thread-manager;1"].getService(this.Ci.nsIThreadManager);
+                    threadManager.mainThread.dispatch(() => {
+                        this.handleTrayClick();
+                    }, this.Ci.nsIThread.DISPATCH_NORMAL);
+                } else if (cmd === 'HELPER_EXIT') {
+                    handled = true;
+                    this.helperPausedByUser = true;
+                    const threadManager = this.Cc["@mozilla.org/thread-manager;1"].getService(this.Ci.nsIThreadManager);
+                    threadManager.mainThread.dispatch(() => {
+                        this.handleHelperExit();
+                    }, this.Ci.nsIThread.DISPATCH_NORMAL);
+                }
+            };
             
             const listener = {
                 onStartRequest: (request) => { this.log('Pump: onStartRequest'); },
-                onStopRequest: (request, statusCode) => { this.log(`Pump: onStopRequest. Status: ${statusCode}`); },
+                onStopRequest: (request, statusCode) => {
+                    this.log(`Pump: onStopRequest. Status: ${statusCode}`);
+                    dispatchCommand(received.trim());
+                    try { inputStream.close(); } catch (e) {}
+                    try { outputStream.close(); } catch (e) {}
+                },
                 onDataAvailable: (request, stream, offset, count) => {
                     try {
                         const scriptableStream = this.Cc['@mozilla.org/scriptableinputstream;1'].createInstance(this.Ci.nsIScriptableInputStream);
                         scriptableStream.init(stream);
                         const data = scriptableStream.read(count);
+                        received += data;
                         this.log(`📥 Received command: ${data}`);
-                        
-                        if (data.trim() === 'CLICKED') {
-                             const threadManager = this.Cc["@mozilla.org/thread-manager;1"].getService(this.Ci.nsIThreadManager);
-                             threadManager.mainThread.dispatch(() => {
-                                this.handleTrayClick();
-                            }, this.Ci.nsIThread.DISPATCH_NORMAL);
-                        }
+                        dispatchCommand(received.trim());
                     } catch (e) {
                          this.log(`✗ Error in onDataAvailable: ${e}`);
                     }
@@ -341,6 +483,14 @@ var ZoteroInTray = {
             
         } catch (e) {
             this.log(`✗ Error setting up pump: ${e}`);
+        }
+    },
+
+    handleHelperExit: function() {
+        this.log("🛑 Helper exited by user request.");
+        this.helperPausedByUser = true;
+        if (this.isWindowHidden) {
+            this.showMainWindow({ forceRestore: false });
         }
     },
 
@@ -579,25 +729,29 @@ var ZoteroInTray = {
     
     cleanupHelper: function() {
         this.isShuttingDown = true;
-        if (this.helperProcess) {
-            this.log("Terminating helper process...");
-            this.helperProcess.kill();
-            this.helperProcess = null;
-        } else {
-            this.log("Helper process was not running.");
-        }
+        this.stopHelperProcess();
+        this.helperProcess = null;
+    },
 
-        if (this.helperPath) {
-            try {
-                const helperFile = this.Cc["@mozilla.org/file/local;1"].createInstance(this.Ci.nsIFile);
-                helperFile.initWithPath(this.helperPath);
-                if (helperFile.exists()) {
-                    helperFile.remove(false);
-                    this.log(`✓ Deleted helper executable: ${this.helperPath}`);
-                }
+    uninstallHelperFiles: function() {
+        try {
+            const cc = Components.classes;
+            const ci = Components.interfaces;
+            const dirService = cc['@mozilla.org/file/directory_service;1'].getService(ci.nsIProperties);
+            for (const key of ['ProfLD', 'ProfD']) {
+                try {
+                    const dir = dirService.get(key, ci.nsIFile);
+                    dir.append(this.helperDirName);
+                    if (dir.exists()) {
+                        dir.remove(true);
+                        this.log(`✓ Removed helper directory: ${dir.path}`);
+                    }
                 } catch (e) {
-                this.log(`✗ Could not delete helper executable: ${e}`);
+                    // Ignore missing profile keys or locked files during uninstall
+                }
             }
+        } catch (e) {
+            this.log(`✗ Could not remove helper directory: ${e}`);
         }
     },
     
@@ -668,7 +822,10 @@ var ZoteroInTray = {
 
 // Global bootstrap functions
 function install() { ZoteroInTray.log("Install event."); }
-function uninstall() { ZoteroInTray.log("Uninstall event."); }
+function uninstall() {
+    ZoteroInTray.log("Uninstall event.");
+    ZoteroInTray.uninstallHelperFiles();
+}
 function startup({ id, version, rootURI }) {
     ZoteroInTray.init({ id, version, rootURI });
 }

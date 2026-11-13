@@ -37,7 +37,7 @@ Once installed, the plugin works automatically:
 1. **Toggle Visibility**: Use the **global hotkey** you configured to show or hide the Zotero window.
 2. **Show Window**: **Single-click the tray icon** to bring the Zotero window to the front.
 3. **Minimize to Tray**: Close the Zotero window using any standard method (e.g., 'X' button, Alt+F4, from the taskbar, or from the Task View) - it will minimize to the system tray instead of closing.
-4. **Completely Quit**: To fully exit Zotero and its tray helper, use the `File` > `Quit` option from the Zotero menu.
+4. **Completely Quit**: To fully exit Zotero and its tray helper, use the `File` > `Quit` option from the Zotero menu. You can also right-click the tray icon and choose **Exit Tray Helper** to stop only the tray helper without Zotero restarting it.
 
 ## 🔧 Configuration
 
@@ -84,11 +84,11 @@ This plugin uses a hybrid architecture to ensure stability on modern Windows sys
 - **Target Platform**: Windows
 - **Zotero Version**: 7.0+ 
 - **Core Logic**: The main plugin logic is a Bootstrap extension running within Zotero.
-- **Tray Icon Helper**: To avoid crashes related to `js-ctypes` on some systems, the system tray icon is managed by a small, pre-compiled external program: `tray_helper.exe`.
+- **Tray Icon Helper**: To avoid crashes related to `js-ctypes` on some systems, the system tray icon and global hotkey are handled by a small native Win32 C executable: `tray_helper.exe` (`native/tray_helper.c`).
 
 ### How It Works
 
-The `.xpi` plugin file contains the `tray_helper.exe` executable. When Zotero starts, the plugin extracts this helper program to a temporary directory and runs it. The helper's main jobs are to create the tray icon and register the global hotkey. When you click the icon or press the hotkey, it notifies the main Zotero plugin via a local TCP socket to perform the appropriate action (show or toggle).
+The `.xpi` plugin file contains the `tray_helper.exe` executable. When Zotero starts, the plugin extracts this helper program to your Zotero profile directory (`minimize-zotero-to-tray`) and runs it. The helper's main jobs are to create the tray icon and register the global hotkey using standard Windows APIs (`Shell_NotifyIconW` and `RegisterHotKey`). When you click the icon or press the hotkey, it notifies the main Zotero plugin via a local TCP socket to perform the appropriate action (show or toggle).
 
 ### ⚠️ Important Note on Zotero Crashes
 
@@ -104,18 +104,14 @@ This plugin, due to its operational methods (e.g., extracting and running an `.e
 
 1.  **Download the project**: Clone or download the source code from the GitHub repository.
 
-2.  **Download Ahk2Exe**: Get the `Ahk2Exe` compiler from the official AutoHotkey releases page: [https://github.com/AutoHotkey/Ahk2Exe/releases](https://github.com/AutoHotkey/Ahk2Exe/releases).
+2.  **Install a C compiler**: Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (with the **Desktop development with C++** workload) or MinGW-w64 (`gcc` and `windres`).
 
-3.  **Convert `tray_helper.ahk` to `exe`**:
-    *   Locate `tray_helper.ahk` in the project's `bin` folder (`addon/bin/tray_helper.ahk`).
-    *   Use `Ahk2Exe` to convert `tray_helper.ahk` into an executable (`.exe`) file.
-    *   During this process, `Ahk2Exe` will prompt you for an icon in `.ico` format. You can use the `zotero_128.ico` file found in the same `bin` folder (`addon/bin/zotero_128.ico`), or provide your own custom `.ico` icon.
-
-4.  **Package the plugin**:
+3.  **Compile and package the plugin**:
     *   Open PowerShell.
     *   Navigate to the project's `scripts` folder (`scripts/`).
     *   Run the `build.ps1` script: `.\build.ps1`
-    *   The packaged plugin (`.xpi` file) will be generated in the project's root directory.
+    *   The script compiles `native/tray_helper.c` (with `addon/bin/zotero_128.ico`) into `addon/bin/tray_helper.exe` and generates the packaged `.xpi` file in the project's root directory.
+    *   If you already placed a pre-built `tray_helper.exe` in `addon/bin/`, you can skip compilation with `.\build.ps1 -SkipCompile`.
 
 ## 📄 License
 
