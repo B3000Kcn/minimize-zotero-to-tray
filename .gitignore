@@ -1,0 +1,7 @@
+*.xpi
+*.exe
+*.obj
+*.res
+*.pdb
+*.ilk
+temp_addon.zip
